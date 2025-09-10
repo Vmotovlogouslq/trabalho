@@ -1,2 +1,300 @@
-# trabalho
-sla n tem
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Sistema de Pizzaria</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background: linear-gradient(135deg, #222, #111);
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 30px;
+      max-width: 1000px;
+    }
+    .input-section, .output-section {
+      background: #222;
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0,255,0,0.2);
+      width: 300px;
+      text-align: center;
+    }
+    input, button {
+      padding: 12px;
+      font-size: 16px;
+      margin: 10px;
+      border-radius: 8px;
+      border: none;
+      width: 80%;
+    }
+    button {
+      background: #28a745;
+      color: rgb(255, 255, 255);
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #218838;
+    }
+    .resultado {
+      margin-top: 20px;
+      padding: 20px;
+      background: #333;
+      border-radius: 12px;
+      width: 100%;
+      text-align: center;
+      font-size: 18px;
+    }
+    .erro {
+      color: #ff4444;
+      font-weight: bold;
+    }
+    canvas {
+      margin-top: 20px;
+      background: rgba(209, 118, 118, 0);
+      border-radius: 12px;
+      padding: 10px;
+    }
+    h1 {
+      color: #ffcc00;
+      text-shadow: 0 0 10px rgba(255,204,0,0.5);
+    }
+  </style>
+</head>
+<body>
+
+  <h1>🍕 Controle de Saída de Pizza</h1>
+  
+  <div class="container">
+    <div class="input-section">
+      <p>Digite o código da pizza:</p>
+      <input type="text" id="codigo" placeholder="Ex: 251220231630PG">
+      <button onclick="processar()">Processar</button>
+    </div>
+
+    <div class="output-section">
+      <div id="saida" class="resultado">Aguardando código...</div>
+      <canvas id="qrCode"></canvas>
+    </div>
+  </div>
+
+  <div style="width: 400px; margin-top: 40px;">
+    <canvas id="pizzaChart"></canvas>
+  </div>
+
+  <script>
+    // --- Contagem dinâmica dos sabores ---
+    let contagemSabores = {
+      "Portuguesa": 0,
+      "Mussarela": 0,
+      "Calabresa": 0,
+      "Quatro Queijos": 0,
+      "Frango": 0,
+      "Chocolate": 0
+    };
+
+    // --- Gráfico de pizza ---
+    const ctx = document.getElementById('pizzaChart').getContext('2d');
+    const pizzaChart = new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: Object.keys(contagemSabores),
+        datasets: [{
+          data: Object.values(contagemSabores),
+          backgroundColor: ['#ff6384', '#36a2eb', '#ffce56', '#4bc0c0', '#F5DEB3', '#FF1493']
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { color: '#eee' }
+          },
+          title: {
+            display: true,
+            text: 'Sabores Mais Vendidos',
+            color: '#eee'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                let sabor = context.label || '';
+                let qtd = context.parsed || 0;
+                return `${sabor}: ${qtd} pedidos`;
+              }
+            }
+          }
+        },
+        onClick: (event, elements) => {
+          if (elements.length > 0) {
+            let index = elements[0].index;
+            let sabor = pizzaChart.data.labels[index];
+            let quantidade = pizzaChart.data.datasets[0].data[index];
+            alert(`Você clicou em ${sabor} — ${quantidade} pedidos`);
+          }
+        }
+      }
+    });
+
+    // --- Função para validar data ---
+    function validarData(dia, mes, ano) {
+      // Verificar se o mês é válido
+      if (mes < 1 || mes > 12) {
+        return {valido: false, mensagem: "Mês inválido no código."};
+      }
+      
+      // Verificar se o dia é válido para o mês
+      const diasNoMes = new Date(ano, mes, 0).getDate();
+      if (dia < 1 || dia > diasNoMes) {
+        return {valido: false, mensagem: `Dia inválido para o mês ${mes}.`};
+      }
+      
+      // Verificar se a data não é futura (opcional, mas útil)
+      const dataInserida = new Date(ano, mes - 1, dia);
+      const hoje = new Date();
+      if (dataInserida > hoje) {
+        return {valido: false, mensagem: "Data futura não permitida."};
+      }
+      
+      return {valido: true};
+    }
+
+    // --- Função para processar código ---
+    function processar() {
+      let codigo = document.getElementById("codigo").value.trim();
+      let saida = document.getElementById("saida");
+      let qrCanvas = document.getElementById("qrCode");
+
+      // Limpar QR code anterior
+      qrCanvas.getContext('2d').clearRect(0, 0, qrCanvas.width, qrCanvas.height);
+
+      // Validar comprimento mínimo do código
+      if (codigo.length < 14) {
+        saida.innerHTML = `<span class="erro">⚠️ Código inválido! Deve ter pelo menos 14 caracteres.</span>`;
+        return;
+      }
+
+      try {
+        let dia = parseInt(codigo.substring(0, 2));
+        let mes = parseInt(codigo.substring(2, 4));
+        let ano = parseInt(codigo.substring(4, 8));
+        let hora = parseInt(codigo.substring(8, 10));
+        let minuto = parseInt(codigo.substring(10, 12));
+        let saborCodigo = codigo.substring(12, 13).toUpperCase();
+        let tamanho = codigo.substring(13, 14).toUpperCase();
+
+        // Validar data
+        const validacaoData = validarData(dia, mes, ano);
+        if (!validacaoData.valido) {
+          saida.innerHTML = `<span class="erro">⚠️ ${validacaoData.mensagem}</span>`;
+          return;
+        }
+
+        // Validar hora
+        if (hora < 0 || hora > 23 || isNaN(hora)) {
+          saida.innerHTML = `<span class="erro">⚠️ Hora inválida no código.</span>`;
+          return;
+        }
+
+        // Validar minuto
+        if (minuto < 0 || minuto > 59 || isNaN(minuto)) {
+          saida.innerHTML = `<span class="erro">⚠️ Minuto inválido no código.</span>`;
+          return;
+        }
+
+        let meses = {
+          "01": "janeiro", "02": "fevereiro", "03": "março", "04": "abril",
+          "05": "maio", "06": "junho", "07": "julho", "08": "agosto",
+          "09": "setembro", "10": "outubro", "11": "novembro", "12": "dezembro"
+        };
+
+        let sabores = {
+          "P": "Portuguesa",
+          "M": "Mussarela",
+          "C": "Calabresa",
+          "Q": "Quatro Queijos",
+          "F": "Frango",
+          "CH":"Chocolate"
+        };
+
+        let tamanhoDesc = {
+          "P": "Pequena",
+          "M": "Média",
+          "G": "Grandee",
+          "GG": "Gigante"
+        };
+
+        // Validar sabor
+        if (!sabores[saborCodigo]) {
+          saida.innerHTML = `<span class="erro">⚠️ Código de sabor inválido. Use P, M, G,  ou XG.</span>`;
+          return;
+        }
+
+        // Validar tamanho
+        if (!tamanhoDesc[tamanho]) {
+          saida.innerHTML = `<span class="erro">⚠️ Código de tamanho inválido. Use P, M, G, ou XG.</span>`;
+          return;
+        }
+
+        // Formatar mês com dois dígitos para busca
+        const mesFormatado = mes < 10 ? `0${mes}` : `${mes}`;
+        
+        let data = `${dia} de ${meses[mesFormatado]} de ${ano}`;
+        let horaCompleta = `${hora.toString().padStart(2, '0')}h${minuto.toString().padStart(2, '0')}min`;
+        let sabor = sabores[saborCodigo];
+        let tam = tamanhoDesc[tamanho];
+
+        saida.innerHTML = `
+          Na sexta-feira, dia ${data}, <br>
+          às ${horaCompleta}, <br>
+          saiu uma pizza ${sabor} tamanho ${tam}.
+        `;
+
+        // --- Atualizar gráfico ---
+        if (contagemSabores[sabor] !== undefined) {
+          contagemSabores[sabor]++;
+          pizzaChart.data.datasets[0].data = Object.values(contagemSabores);
+          pizzaChart.update();
+        }
+
+        // --- Gerar QR Code ---
+        QRCode.toCanvas(qrCanvas, codigo, {
+          width: 200,
+          margin: 1,
+          color: { dark: '#000000', light: '#ffffff' }
+        }, function(error) {
+          if (error) {
+            console.error(error);
+            saida.innerHTML += `<br><span class="erro">Erro ao gerar QR Code.</span>`;
+          }
+        });
+
+      } catch (erro) {
+        saida.innerHTML = `<span class="erro">⚠️ Erro ao processar o código: ${erro.message}</span>`;
+      }
+    }
+
+    // Adicionar evento de tecla para processar ao pressionar Enter
+    document.getElementById("codigo").addEventListener("keypress", function(event) {
+      if (event.key === "Enter") {
+        processar();
+      }
+    });
+  </script>
+
+</body>
+</html>
